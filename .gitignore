@@ -1,0 +1,5 @@
+.cert/
+.tools/
+.tunnel-url
+__pycache__/
+.openai/

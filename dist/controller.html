@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#0b1020">
+  <title>HYS Very Cool Racing Game — Phone Controller</title>
+  <style>
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0b1020;color:#fff;font-family:Inter,ui-sans-serif,system-ui,sans-serif;touch-action:none;overscroll-behavior:none}
+    body{background:radial-gradient(circle at 50% 45%,#18233b,#090d18 70%)}.controller-shell{display:grid;grid-template-rows:auto 1fr;width:100%;height:100%;padding:max(12px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left));transform-origin:center}
+    header{display:flex;align-items:center;justify-content:space-between;gap:14px}.brand{font-size:clamp(11px,2.2vw,16px);font-weight:950;letter-spacing:.08em;white-space:nowrap}.brand b{color:#f7d046}.status{display:flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid #ffffff12;border-radius:999px;background:#060a12a6;color:#aab5ca;font-size:12px}.dot{width:8px;height:8px;border-radius:50%;background:#748097}.online .dot{background:#58dc89;box-shadow:0 0 10px #58dc89}.online{color:#dfffea}
+    main{min-height:0;display:grid;grid-template-columns:minmax(145px,1fr) minmax(220px,1.6fr) minmax(145px,1fr);align-items:stretch;gap:16px;padding-top:12px}button{appearance:none;-webkit-appearance:none;outline:none}.pedal,.calibrate{border:0;border-radius:22px;color:#fff;font:900 clamp(20px,4vw,38px)/1 system-ui;letter-spacing:.04em;box-shadow:inset 0 0 0 2px #ffffff1c,0 12px 28px #0006;touch-action:none}.pedal{display:grid;place-content:center;min-height:120px}.pedal small{margin-top:7px;font-size:.38em;letter-spacing:.12em;opacity:.72}.brake{background:linear-gradient(#d84940,#96221d)}.gas{background:linear-gradient(#35bd6d,#197a43)}.pedal.active{transform:translateY(3px) scale(.985);filter:brightness(1.25);box-shadow:inset 0 0 0 3px #fff8,0 4px 10px #0006}
+    .wheel{display:flex;min-width:0;flex-direction:column;align-items:center;justify-content:center;gap:9px;padding:5px 0}.room-line{font-size:12px;color:#aab5ca}.room-line strong{color:#fff;letter-spacing:.18em;font-size:16px}.indicator{position:relative;width:min(100%,420px);height:84px;border-radius:44px;background:#080c16;border:2px solid #ffffff1c;overflow:hidden}.indicator:before{content:"";position:absolute;left:50%;top:11px;bottom:11px;width:2px;background:#fff4}.needle{position:absolute;left:50%;bottom:10px;width:6px;height:64px;border-radius:5px;background:#f7d046;transform-origin:50% calc(100% - 3px);transform:translateX(-50%) rotate(0deg);box-shadow:0 0 12px #f7d04699}.calibrate{padding:13px 28px;background:#2a3a5b;font-size:15px}.hint{margin:0;text-align:center;color:#9da9bf;font-size:12px;max-width:360px}.permission{color:#ffd877}.join{display:flex;gap:7px}.join[hidden]{display:none}.join input{width:100px;border:1px solid #ffffff33;border-radius:9px;background:#ffffff0c;color:#fff;text-transform:uppercase;text-align:center;font:bold 18px/1 monospace;letter-spacing:.15em;padding:8px;-webkit-user-select:text;user-select:text;touch-action:manipulation}.join button{border:0;border-radius:9px;background:#f7d046;color:#131722;font-weight:900;padding:8px 13px}
+    details{font-size:11px;color:#8390a8}details input{width:180px}
+    /* iOS may keep the viewport portrait while the physical phone is held as a
+       wheel. Keep a landscape-sized control surface and rotate it in software. */
+    @media(orientation:portrait){.controller-shell{position:absolute;left:50%;top:50%;width:100vh;height:100vw;padding:10px 14px;transform:translate(-50%,-50%) rotate(var(--ui-turn,90deg))}}
+    @media(max-height:430px){body{padding-top:8px;padding-bottom:8px}main{padding-top:7px;gap:10px}.indicator{height:65px}.needle{height:48px}.wheel{gap:6px}.pedal,.calibrate{border-radius:16px}.calibrate{padding:10px 22px}.hint{font-size:11px}}
+  </style>
+</head>
+<body>
+  <div id="controller-shell" class="controller-shell">
+    <header><div class="brand">HYS <b>VERY COOL RACING GAME</b></div><div id="status" class="status"><i class="dot"></i><span>Connecting…</span></div></header>
+    <main>
+      <button id="brake" class="pedal brake">BRAKE<br><small>REVERSE</small></button>
+      <section class="wheel">
+        <div id="room-line" class="room-line"></div>
+        <div id="join" class="join" hidden><input id="room-input" maxlength="4" autocomplete="off" placeholder="CODE"><button>JOIN</button></div>
+        <div class="indicator"><i id="needle" class="needle"></i></div>
+        <button id="calibrate" class="calibrate">CALIBRATE CENTER</button>
+        <p id="hint" class="hint">Hold the phone like a steering wheel, then calibrate.</p>
+        <details><summary>Sensor test</summary><label>Simulated steering <input id="sim" type="range" min="-100" max="100" value="0"></label></details>
+      </section>
+      <button id="gas" class="pedal gas">ACCELERATE</button>
+    </main>
+  </div>
+<script>
+(()=>{'use strict';
+  const qs=new URLSearchParams(location.search),status=document.querySelector('#status'),statusText=status.querySelector('span'),roomLine=document.querySelector('#room-line'),joinBox=document.querySelector('#join'),roomInput=document.querySelector('#room-input'),joinButton=joinBox.querySelector('button'),needle=document.querySelector('#needle'),hint=document.querySelector('#hint'),calibrate=document.querySelector('#calibrate'),sim=document.querySelector('#sim'),gas=document.querySelector('#gas'),brake=document.querySelector('#brake'),shell=document.querySelector('#controller-shell');
+  let room=(qs.get('room')||'').trim().toUpperCase().slice(0,4),socket,reconnectTimer,currentQuat=null,neutralQuat=null,lastQuat=null,lastWheelAngle=0,pendingCalibration=false,haveReading=false,sensorTarget=0,steer=0,throttle=0,braking=0,debugActive=false,lastSent='',lastSend=0,lastLoop=performance.now(),uiTurn=90;
+  const RAD=Math.PI/180,DEG=180/Math.PI,clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),wrap=a=>Math.atan2(Math.sin(a*RAD),Math.cos(a*RAD))*DEG;
+  const qMul=(a,b)=>[a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]],qInv=q=>[-q[0],-q[1],-q[2],q[3]],qDot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2]+a[3]*b[3];
+  function qAxis(x,y,z,angle){const s=Math.sin(angle/2);return[x*s,y*s,z*s,Math.cos(angle/2)]}
+  // DeviceOrientation is an intrinsic Z-X'-Y'' rotation. Keeping the complete
+  // attitude avoids the beta/gamma axis and sign swaps caused by screen rotation.
+  function quatFromEuler(alpha,beta,gamma){return qMul(qMul(qAxis(0,0,1,alpha*RAD),qAxis(1,0,0,beta*RAD)),qAxis(0,1,0,gamma*RAD))}
+  function rotateBy(q,v){const p=qMul(qMul(q,[v[0],v[1],v[2],0]),qInv(q));return[p[0],p[1],p[2]]}
+  function continuousRelativeRoll(current,neutral){let relative=qMul(qInv(neutral),current);if(relative[3]<0)relative=relative.map(v=>-v);const twistLength=Math.hypot(relative[2],relative[3]);if(twistLength<1e-5)return lastWheelAngle;const wrapped=2*Math.atan2(relative[2]/twistLength,relative[3]/twistLength)*DEG;lastWheelAngle+=wrap(wrapped-lastWheelAngle);return lastWheelAngle}
+  function mapSteering(delta){const sign=Math.sign(delta),amount=Math.abs(delta),dead=4,max=48;if(amount<=dead)return 0;const n=clamp((amount-dead)/(max-dead),0,1);return sign*Math.pow(n,1.45)}
+  function showRoom(){roomLine.innerHTML=room?`ROOM <strong>${room}</strong>`:'Enter the room code shown on the PC';joinBox.hidden=!!room}
+  function setStatus(online,text){status.classList.toggle('online',online);statusText.textContent=text}
+  function connect(){clearTimeout(reconnectTimer);if(!room)return;const proto=location.protocol==='https:'?'wss':'ws';socket=new WebSocket(`${proto}://${location.host}/ws`);socket.onopen=()=>{socket.send(JSON.stringify({type:'join',room}));setStatus(false,'Joining…')};socket.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}if(m.type==='joined')setStatus(!!m.hostConnected,m.hostConnected?'Connected to game':'Waiting for PC');else if(m.type==='error')setStatus(false,m.message||'Room unavailable');else if(m.type==='host')setStatus(!!m.connected,m.connected?'Connected to game':'Waiting for PC')};socket.onclose=()=>{setStatus(false,'Reconnecting…');reconnectTimer=setTimeout(connect,1000)};socket.onerror=()=>socket.close()}
+  function setNeutral(q){neutralQuat=q.slice();lastWheelAngle=0;sensorTarget=0;steer=0;pendingCalibration=false;calibrate.textContent='CENTERED';setTimeout(()=>calibrate.textContent='CALIBRATE CENTER',900)}
+  function applyOrientation(q){if(lastQuat&&qDot(lastQuat,q)<0)q=q.map(v=>-v);lastQuat=currentQuat=q;haveReading=true;if(pendingCalibration||!neutralQuat)setNeutral(q);if(!debugActive)sensorTarget=mapSteering(continuousRelativeRoll(q,neutralQuat));const upInDevice=rotateBy(qInv(q),[0,0,1]);if(Math.abs(upInDevice[0])>.62){const next=upInDevice[0]>0?90:-90;if(next!==uiTurn){uiTurn=next;shell.style.setProperty('--ui-turn',`${uiTurn}deg`)}}}
+  function onOrientation(e){if(!Number.isFinite(e.alpha)||!Number.isFinite(e.beta)||!Number.isFinite(e.gamma))return;applyOrientation(quatFromEuler(e.alpha,e.beta,e.gamma))}
+  async function enableMotion(){try{if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){const result=await DeviceOrientationEvent.requestPermission();if(result!=='granted')throw Error('Motion permission was not granted')}window.addEventListener('deviceorientation',onOrientation,true);hint.classList.remove('permission');hint.textContent='Rotate left or right to steer. Recalibrate whenever you change your grip.';return true}catch(err){hint.classList.add('permission');hint.textContent='Motion access is needed. Tap CALIBRATE and allow access.';return false}}
+  calibrate.addEventListener('click',async()=>{debugActive=false;const ok=await enableMotion();if(ok&&currentQuat)setNeutral(currentQuat);else if(ok){pendingCalibration=true;calibrate.textContent='WAITING FOR SENSOR'}});
+  function bindPedal(el,setter){const release=()=>{setter(0);el.classList.remove('active')};el.addEventListener('pointerdown',e=>{e.preventDefault();el.setPointerCapture(e.pointerId);setter(1);el.classList.add('active')});for(const name of ['pointerup','pointercancel','lostpointercapture'])el.addEventListener(name,release)}
+  bindPedal(gas,v=>throttle=v);bindPedal(brake,v=>braking=v);
+  sim.addEventListener('input',()=>{debugActive=true;sensorTarget=Number(sim.value)/100});sim.addEventListener('change',()=>{if(Number(sim.value)===0)debugActive=false});
+  joinButton.addEventListener('click',()=>{room=roomInput.value.trim().toUpperCase().slice(0,4);if(room.length<4)return;history.replaceState(null,'',`?room=${encodeURIComponent(room)}`);showRoom();connect()});roomInput.addEventListener('keydown',e=>{if(e.key==='Enter')joinButton.click()});
+  function loop(now){const dt=Math.min(.05,(now-lastLoop)/1000);lastLoop=now;const delta=sensorTarget-steer,reversing=steer*sensorTarget<-.015,response=reversing?7.5:11,maxStep=(reversing?3.6:5.5)*dt,step=clamp(delta*(1-Math.exp(-response*dt)),-maxStep,maxStep);steer+=step;if(Math.abs(sensorTarget)<.001&&Math.abs(steer)<.006)steer=0;needle.style.transform=`translateX(-50%) rotate(${steer*52}deg)`;const payload=JSON.stringify({type:'state',steer:+steer.toFixed(4),throttle,brake:braking});if(socket&&socket.readyState===1&&(payload!==lastSent||now-lastSend>180)){socket.send(payload);lastSent=payload;lastSend=now}requestAnimationFrame(loop)}
+  // Mobile Safari can otherwise select labels or open its callout while the
+  // player is holding a pedal and rotating the phone.
+  for(const eventName of ['selectstart','contextmenu','dragstart'])document.addEventListener(eventName,e=>{if(e.target!==roomInput)e.preventDefault()});
+  document.addEventListener('selectionchange',()=>{if(document.activeElement!==roomInput){const selection=getSelection();if(selection)selection.removeAllRanges()}});
+  document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
+  // Development hook used to reproduce orientation transitions without a phone.
+  // Screen orientation is deliberately absent from the steering calculation.
+  window.__controllerDebug={quatFromEuler,relativeRoll:(current,neutral)=>{lastWheelAngle=0;return continuousRelativeRoll(current,neutral)},simulateEuler:(alpha,beta,gamma)=>{debugActive=false;applyOrientation(quatFromEuler(alpha,beta,gamma))},simulateRelativeRoll:degrees=>{if(!neutralQuat)neutralQuat=[0,0,0,1];debugActive=false;applyOrientation(qMul(neutralQuat,qAxis(0,0,1,degrees*RAD)))},calibrate:()=>currentQuat&&setNeutral(currentQuat),get state(){return{steer,sensorTarget,wheelAngle:lastWheelAngle,uiTurn,throttle,braking}}};
+  showRoom();if(room)connect();else setStatus(false,'Enter room code');window.addEventListener('blur',()=>{throttle=0;braking=0;sensorTarget=0});requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

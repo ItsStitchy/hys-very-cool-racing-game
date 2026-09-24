@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: hys-very-cool-racing-game
+    runtime: python
+    plan: free
+    buildCommand: python3 -m py_compile server.py
+    startCommand: python3 server.py
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5

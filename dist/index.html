@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="description" content="A tiny low-poly arcade driving prototype." />
+  <title>HYS Very Cool Racing Game</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1020'/%3E%3Cpath d='M6 22 12 9h8l6 13h-5l-2-4h-6l-2 4Z' fill='%23f7d046'/%3E%3C/svg%3E" />
+  <style>
+    *{box-sizing:border-box} html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0b1020;color:#fff;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    canvas{display:block;width:100%;height:100%;outline:none}
+    .hud{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;padding:clamp(16px,2.3vw,28px)}
+    .top{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}
+    .left-stack{display:flex;flex-direction:column;align-items:flex-start;gap:9px}
+    .brand{font-weight:900;letter-spacing:.12em;font-size:clamp(15px,2vw,22px);text-transform:uppercase;text-shadow:0 2px 12px #0008}.brand b{color:#f7d046}
+    .pair{pointer-events:auto;display:grid;grid-template-columns:auto auto;gap:2px 10px;align-items:center;padding:9px 11px;border:1px solid #ffffff26;border-radius:8px;background:#0b1020c7;backdrop-filter:blur(7px);box-shadow:0 5px 18px #0003;font-size:11px;color:#cfd6e5}.pair strong{font-size:20px;line-height:1;letter-spacing:.16em;color:#fff}.pair .connection{grid-column:1/-1;display:flex;align-items:center;gap:6px;margin-top:4px}.dot{width:7px;height:7px;border-radius:50%;background:#788195;box-shadow:0 0 0 3px #ffffff0d}.pair.connected .dot{background:#58dc89;box-shadow:0 0 9px #58dc89}.pair a{grid-column:1/-1;max-width:260px;color:#9fc5ff;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:390px;color:#e8ecf8;font-size:13px;font-weight:650;text-shadow:0 2px 8px #000}
+    .control{display:flex;align-items:center;gap:6px;background:#0b1020aa;border:1px solid #ffffff1e;padding:7px 9px;border-radius:7px;backdrop-filter:blur(6px)}
+    kbd{min-width:22px;height:22px;padding:2px 5px;display:grid;place-items:center;border-radius:4px;background:#f8fafc;color:#121725;font:800 12px/1 inherit;box-shadow:0 2px 0 #aeb5c4}
+    .bottom{display:flex;align-items:flex-end;justify-content:space-between}
+    .speed{font-variant-numeric:tabular-nums;font-weight:900;font-size:clamp(34px,6vw,64px);line-height:.82;letter-spacing:-.06em;text-shadow:0 3px 18px #000a}.speed span{font-size:12px;letter-spacing:.16em;color:#cad0dd;margin-left:5px}
+    .reset-note{font-size:13px;color:#e8ecf8;background:#0b1020aa;border:1px solid #ffffff1e;padding:8px 11px;border-radius:7px;opacity:0;transform:translateY(5px);transition:.18s ease}.reset-note.show{opacity:1;transform:none}
+    .error{position:fixed;inset:0;display:none;place-items:center;padding:24px;background:#0b1020;color:#fff;text-align:center}.error.show{display:grid}
+    @media(max-width:650px){.controls{max-width:220px}.control{padding:6px}.control em{display:none}.hud{padding:14px}.brand{font-size:14px}.pair a{display:none}.pair{padding:7px 9px}}
+  </style>
+</head>
+<body>
+  <canvas id="game" tabindex="0" aria-label="3D arcade driving game"></canvas>
+  <div class="hud" aria-hidden="true">
+    <div class="top"><div class="left-stack"><div class="brand">HYS <b>Very Cool Racing Game</b></div><div id="pair" class="pair"><span>PHONE ROOM</span><strong id="room">----</strong><div class="connection"><i class="dot"></i><span id="phone-status">Waiting for phone</span></div><a id="controller-link" target="_blank" rel="noopener">Controller link</a></div></div><div class="controls"><div class="control"><kbd>W</kbd><kbd>S</kbd><em>Drive</em></div><div class="control"><kbd>A</kbd><kbd>D</kbd><em>Steer</em></div><div class="control"><kbd>R</kbd><em>Reset</em></div></div></div>
+    <div class="bottom"><div class="speed"><i id="speed">000</i><span>KM/H</span></div><div id="note" class="reset-note">Back on track</div></div>
+  </div>
+  <div id="error" class="error"><div><h1>WebGL is unavailable</h1><p>This prototype needs a browser with WebGL enabled.</p></div></div>
+<script>
+(() => {
+  'use strict';
+  const canvas=document.querySelector('#game'), gl=canvas.getContext('webgl',{antialias:true,alpha:false});
+  if(!gl){document.querySelector('#error').classList.add('show');return}
+
+  const vs=`attribute vec3 p;attribute vec3 n;uniform mat4 m;uniform mat4 vp;uniform vec3 color;varying vec3 c;void main(){vec3 wn=normalize(mat3(m)*n);float light=.56+.44*max(0.,dot(wn,normalize(vec3(-.4,.9,.25))));c=color*light;gl_Position=vp*m*vec4(p,1.);}`;
+  const fs=`precision mediump float;varying vec3 c;uniform float fog;void main(){gl_FragColor=vec4(c,1.);}`;
+  function shader(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s}
+  const prog=gl.createProgram();gl.attachShader(prog,shader(gl.VERTEX_SHADER,vs));gl.attachShader(prog,shader(gl.FRAGMENT_SHADER,fs));gl.linkProgram(prog);gl.useProgram(prog);
+  const P=gl.getAttribLocation(prog,'p'),N=gl.getAttribLocation(prog,'n'),M=gl.getUniformLocation(prog,'m'),VP=gl.getUniformLocation(prog,'vp'),COL=gl.getUniformLocation(prog,'color');
+  const verts=[], norms=[];
+  const faces=[[[0,0,1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]],[[0,0,-1],[1,-1,-1],[-1,-1,-1],[-1,1,-1],[1,1,-1]],[[1,0,0],[1,-1,1],[1,-1,-1],[1,1,-1],[1,1,1]],[[-1,0,0],[-1,-1,-1],[-1,-1,1],[-1,1,1],[-1,1,-1]],[[0,1,0],[-1,1,1],[1,1,1],[1,1,-1],[-1,1,-1]],[[0,-1,0],[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1]]];
+  for(const [n,a,b,c,d] of faces){for(const q of [a,b,c,a,c,d]){verts.push(q[0],q[1],q[2]);norms.push(...n)}}
+  function buffer(data,loc){const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.STATIC_DRAW);gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);return b}const cubePB=buffer(verts,P),cubeNB=buffer(norms,N);
+  function meshBuffer(positions,normals){return{p:buffer(positions,P),n:buffer(normals,N),count:positions.length/3}}
+  function bindCube(){gl.bindBuffer(gl.ARRAY_BUFFER,cubePB);gl.vertexAttribPointer(P,3,gl.FLOAT,false,0,0);gl.bindBuffer(gl.ARRAY_BUFFER,cubeNB);gl.vertexAttribPointer(N,3,gl.FLOAT,false,0,0)}
+  gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.clearColor(.54,.72,.84,1);
+
+  const mat4={
+    mul(a,b){const o=new Float32Array(16);for(let r=0;r<4;r++)for(let c=0;c<4;c++)o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];return o},
+    perspective(fov,asp,n,f){const t=1/Math.tan(fov/2),o=new Float32Array(16);o[0]=t/asp;o[5]=t;o[10]=(f+n)/(n-f);o[11]=-1;o[14]=2*f*n/(n-f);return o},
+    look(eye,at){let zx=eye[0]-at[0],zy=eye[1]-at[1],zz=eye[2]-at[2],l=Math.hypot(zx,zy,zz);zx/=l;zy/=l;zz/=l;let xx=zz,xz=-zx;l=Math.hypot(xx,xz);xx/=l;xz/=l;const yx=zy*xz,yz=-zy*xx;return new Float32Array([xx,yx,zx,0,0,Math.hypot(zx,zz),zy,0,xz,yz,zz,0,-(xx*eye[0]+xz*eye[2]),-(yx*eye[0]+Math.hypot(zx,zz)*eye[1]+yz*eye[2]),-(zx*eye[0]+zy*eye[1]+zz*eye[2]),1])},
+    model(x,y,z,sx,sy,sz,r=0,tilt=0,roll=0){const c=Math.cos(r),s=Math.sin(r),ct=Math.cos(tilt),st=Math.sin(tilt),cr=Math.cos(roll),sr=Math.sin(roll);return new Float32Array([(c*cr+s*st*sr)*sx,ct*sr*sx,(-s*cr+c*st*sr)*sx,0,(-c*sr+s*st*cr)*sy,ct*cr*sy,(s*sr+c*st*cr)*sy,0,s*ct*sz,-st*sz,c*ct*sz,0,x,y,z,1])}
+  };
+  const scene=[],trackSegments=[],skids=[],gates=[];
+  const colors={grass:[.19,.46,.24],slope:[.16,.35,.2],road:[.19,.21,.25],edge:[.93,.94,.9],yellow:[1,.7,.08],red:[.9,.19,.12],blue:[.09,.32,.68],dark:[.035,.045,.06],white:[.94,.96,1],tree:[.1,.32,.16],trunk:[.29,.16,.07],rock:[.3,.36,.38]};
+  function add(x,y,z,sx,sy,sz,color,r=0,tilt=0,roll=0){scene.push({x,y,z,sx,sy,sz,color,r,tilt,roll})}
+  add(0,-57,-30,1500,2,1500,colors.grass);
+  // 6.3 km original closed circuit: fast opening valley, downhill esses,
+  // sustained climb, crest, compression, banked bowl, forest and final run.
+  const anchors=[[0,0,-520,0],[0,0,-300,0],[0,-2,-100,0],[60,-6,80,.03],[180,-10,200,.06],[320,-13,250,.1],[460,-18,220,.08],[560,-27,120,0],[600,-35,-20,-.04],[560,-30,-120,-.08],[470,-18,-180,-.12],[410,-8,-120,.08],[430,0,0,.1],[500,18,140,.08],[580,42,300,.05],[520,70,470,.02],[400,86,560,0],[250,92,600,0],[100,84,590,-.03],[-80,60,560,-.05],[-260,28,500,-.08],[-420,0,400,-.05],[-500,-20,280,0],[-450,-10,150,.05],[-350,5,80,.1],[-380,15,-20,-.12],[-500,18,-80,-.28],[-560,12,-180,-.38],[-500,5,-280,-.26],[-380,0,-350,-.08],[-250,8,-320,.04],[-180,18,-400,.08],[-260,35,-500,.05],[-160,58,-620,0],[0,72,-670,0],[180,66,-650,-.03],[360,42,-580,-.05],[480,20,-470,-.06],[520,5,-340,-.02],[420,0,-280,.05],[300,-5,-330,.08],[220,0,-430,.04],[100,0,-520,0]];
+  const pts=[];
+  function curve(p0,p1,p2,p3,t){const t2=t*t,t3=t2*t;return [
+    .5*((2*p1[0])+(-p0[0]+p2[0])*t+(2*p0[0]-5*p1[0]+4*p2[0]-p3[0])*t2+(-p0[0]+3*p1[0]-3*p2[0]+p3[0])*t3),
+    .5*((2*p1[1])+(-p0[1]+p2[1])*t+(2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*t2+(-p0[1]+3*p1[1]-3*p2[1]+p3[1])*t3),
+    .5*((2*p1[2])+(-p0[2]+p2[2])*t+(2*p0[2]-5*p1[2]+4*p2[2]-p3[2])*t2+(-p0[2]+3*p1[2]-3*p2[2]+p3[2])*t3),
+    .5*((2*p1[3])+(-p0[3]+p2[3])*t+(2*p0[3]-5*p1[3]+4*p2[3]-p3[3])*t2+(-p0[3]+3*p1[3]-3*p2[3]+p3[3])*t3)
+  ]}
+  const samplesPerAnchor=20,indexAt12=i=>Math.round(i*samplesPerAnchor/12);
+  for(let i=0;i<anchors.length;i++){const p0=anchors[(i-1+anchors.length)%anchors.length],p1=anchors[i],p2=anchors[(i+1)%anchors.length],p3=anchors[(i+2)%anchors.length];for(let j=0;j<samplesPerAnchor;j++)pts.push(curve(p0,p1,p2,p3,j/samplesPerAnchor))}pts.push([...pts[0]]);
+  const routeCount=pts.length-1;
+  let roadDistance=0;
+  function segment(a,b,index,width=16.5){const dx=b[0]-a[0],dy=b[1]-a[1],dz=b[2]-a[2],len=Math.hypot(dx,dz),r=Math.atan2(dx,dz),tilt=-Math.atan2(dy,len),bank=(a[3]+b[3])/2,mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2,mz=(a[2]+b[2])/2;trackSegments.push({a,b,x:mx,y:my,z:mz,len,r,bank,width,index});const spacing=14,start=(spacing-roadDistance%spacing)%spacing;for(let t=start;t<len;t+=spacing){const q=t/len,d=t-len/2,x=mx+Math.sin(r)*d,z=mz+Math.cos(r)*d,y=a[1]+dy*q+.15;add(x,y,z,.24,.025,3.4,colors.yellow,r,tilt,bank)}roadDistance+=len}
+  for(let i=0;i<pts.length-1;i++)segment(pts[i],pts[i+1],i);
+  function buildTrackMeshes(){const half=8.25,landHalf=68,frame=pts.map((p,i)=>{const a=pts[i===0?pts.length-2:i-1],b=pts[i===pts.length-1?1:i+1],r=Math.atan2(b[0]-a[0],b[2]-a[2]);return{nx:Math.cos(r),nz:-Math.sin(r)}}),edges=pts.map((p,i)=>[-1,1].map(side=>[p[0]+frame[i].nx*half*side,p[1]+Math.sin(p[3])*half*side,p[2]+frame[i].nz*half*side])),landEdges=pts.map((p,i)=>[-1,1].map(side=>[p[0]+frame[i].nx*landHalf*side,p[1]-.55,p[2]+frame[i].nz*landHalf*side])),road=[],roadN=[],walls=[],wallN=[],land=[],landN=[],cliffs=[],cliffN=[];const tri=(arr,norm,a,b,c,n)=>{arr.push(...a,...b,...c);for(let k=0;k<3;k++)norm.push(...n)};for(let i=0;i<edges.length-1;i++){const [al,ar]=edges[i],[bl,br]=edges[i+1],[ll,lr]=landEdges[i],[nl,nr]=landEdges[i+1];tri(road,roadN,al,ar,br,[0,1,0]);tri(road,roadN,al,br,bl,[0,1,0]);const bridge=i>=indexAt12(150)&&i<=indexAt12(168);if(!bridge){tri(land,landN,ll,al,bl,[0,1,0]);tri(land,landN,ll,bl,nl,[0,1,0]);tri(land,landN,ar,lr,nr,[0,1,0]);tri(land,landN,ar,nr,br,[0,1,0])}for(const side of [0,1]){const a=edges[i][side],b=edges[i+1][side],at=[a[0],a[1]+1.35,a[2]],bt=[b[0],b[1]+1.35,b[2]];tri(walls,wallN,a,b,bt,[0,.25,1]);tri(walls,wallN,a,bt,at,[0,.25,1]);if(!bridge){const la=landEdges[i][side],lb=landEdges[i+1][side],dir=side?1:-1,ba=[la[0]+frame[i].nx*dir*42,-56,la[2]+frame[i].nz*dir*42],bb=[lb[0]+frame[i+1].nx*dir*42,-56,lb[2]+frame[i+1].nz*dir*42];tri(cliffs,cliffN,la,lb,bb,[side?1: -1,.2,0]);tri(cliffs,cliffN,la,bb,ba,[side?1:-1,.2,0])}}}return{road:meshBuffer(road,roadN),walls:meshBuffer(walls,wallN),land:meshBuffer(land,landN),cliffs:meshBuffer(cliffs,cliffN)}}
+  const trackMeshes=buildTrackMeshes();bindCube();
+  function trackSurfaceAt(x,z,yHint=null){
+    const project=q=>{const dx=x-q.a[0],dz=z-q.a[2],c=Math.cos(q.r),sn=Math.sin(q.r),lx=c*dx-sn*dz,lz=sn*dx+c*dz,t=Math.max(0,Math.min(1,lz/q.len)),cx=q.a[0]+(q.b[0]-q.a[0])*t,cz=q.a[2]+(q.b[2]-q.a[2])*t,d2=(x-cx)**2+(z-cz)**2,bank=q.a[3]+(q.b[3]-q.a[3])*t,y=q.a[1]+(q.b[1]-q.a[1])*t+lx*Math.sin(bank);return{q,lx,d2,y,bank}};
+    let nearest=null;for(const q of trackSegments){const v=project(q);if(!nearest||v.d2<nearest.d2)nearest=v}
+    let best=nearest,score=nearest.d2+(yHint===null?0:(nearest.y-yHint)**2*4);
+    if(yHint!==null)for(const q of trackSegments){const sep=Math.min((q.index-nearest.q.index+routeCount)%routeCount,(nearest.q.index-q.index+routeCount)%routeCount);if(sep<=18)continue;const v=project(q);if(v.d2>nearest.d2+25)continue;const s2=v.d2+(v.y-yHint)**2*4;if(s2<score){score=s2;best=v}}
+    return{y:best.y,bank:best.bank,r:best.q.r,lx:best.lx,width:best.q.width,onTrack:Math.abs(best.lx)<best.q.width/2+.35,index:best.q.index,distance:Math.sqrt(best.d2)}
+  }
+  const ramp={x:9999,z:9999,w:0,l:0,r:0,h:0,base:0};
+  function terrainHeightAt(x,z){const q=trackSurfaceAt(x,z);if(!q||q.distance>68||q.index>=indexAt12(150)&&q.index<=indexAt12(168))return-56;const center=q.y-q.lx*Math.sin(q.bank),side=Math.sign(q.lx)||1,edge=center+side*8.25*Math.sin(q.bank),u=Math.max(0,Math.min(1,(Math.abs(q.lx)-8.25)/(68-8.25)));return Math.abs(q.lx)<=8.25?q.y:edge+(center-.55-edge)*u}
+  const gateIndices=[2,126,209,333,450].map(indexAt12),nearGate=i=>gateIndices.some(g=>Math.min(Math.abs(i-g),routeCount-Math.abs(i-g))<indexAt12(10)),hash=n=>{const v=Math.sin(n*91.713)*43758.5453;return v-Math.floor(v)};
+  // Deterministic but varied vegetation, grounded on the shoulder mesh and
+  // excluded from roads, barriers, gantries and the open bridge section.
+  for(let i=0;i<pts.length-1;i+=samplesPerAnchor){if(i>=indexAt12(141)&&i<=indexAt12(177)||nearGate(i))continue;const p=pts[i],a=pts[(i+1)%pts.length],r=Math.atan2(a[0]-p[0],a[2]-p[2]),nx=Math.cos(r),nz=-Math.sin(r);for(const side of [-1,1]){if(hash(i+side*19)<.2)continue;const off=(27+hash(i*3+side*11)*31)*side,x=p[0]+nx*off,z=p[2]+nz*off,q=trackSurfaceAt(x,z);if(!q||q.distance<20||q.index>=indexAt12(150)&&q.index<=indexAt12(168))continue;const s=1.55+hash(i*7+side*23)*1.35,ground=terrainHeightAt(x,z),lean=(hash(i*13+side*31)-.5)*.12;add(x,ground+s*.8,z,.62,s*1.6,.62,colors.trunk,r+lean);add(x,ground+s*2.02,z,s*(1.5+hash(i+4)*.35),s*1.45,s*(1.5+hash(i+9)*.35),colors.tree,r+lean,Math.PI/4)}}
+  // Restrained silhouettes mark the four broad regions without crowding the road.
+  for(const [legacyIndex,side,s] of [[198,1,24],[273,-1,21],[378,1,18],[474,-1,23]]){const index=indexAt12(legacyIndex),p=pts[index],a=pts[index+1],r=Math.atan2(a[0]-p[0],a[2]-p[2]),x=p[0]+Math.cos(r)*45*side,z=p[2]-Math.sin(r)*45*side,ground=terrainHeightAt(x,z),tilt=.12,extent=Math.cos(tilt)*s*.55+Math.sin(tilt)*s*.5;add(x,ground+extent,z,s,s*1.1,s,colors.rock,r*.2,tilt)}
+  // All gantries and the start stripe derive from the same path frame as the road.
+  function pathFrameAt(index){const p=pts[index],a=pts[index===0?pts.length-2:index-1],b=pts[index===pts.length-1?1:index+1],r=Math.atan2(b[0]-a[0],b[2]-a[2]);return{p,r,nx:Math.cos(r),nz:-Math.sin(r),bank:p[3]}}
+  function addGate(index,color,height=6.5){const f=pathFrameAt(index),p=f.p,off=6.8,left=[p[0]-f.nx*off,p[2]-f.nz*off],right=[p[0]+f.nx*off,p[2]+f.nz*off],rise=Math.sin(f.bank)*off,ly=p[1]-rise,ry=p[1]+rise,top=p[1]+height;add(left[0],ly+height/2,left[1],1.05,height,1.05,colors.white,f.r);add(right[0],ry+height/2,right[1],1.05,height,1.05,colors.white,f.r);add(p[0],top,p[2],14.65,1,1.05,color,f.r,0,f.bank);gates.push({index,x:p[0],z:p[2],r:f.r,bank:f.bank,off,left,right,ly,ry,top})}
+  function addStartStripe(index){const f=pathFrameAt(index),p=f.p,tx=Math.sin(f.r),tz=Math.cos(f.r);for(let i=-4;i<4;i++)for(let j=-1;j<1;j++){const across=(i+.5)*2,along=(j+.5)*2,x=p[0]+f.nx*across+tx*along,z=p[2]+f.nz*across+tz*along,y=trackSurfaceAt(x,z).y+.08;add(x,y,z,2,.025,2,(i+j)&1?colors.white:colors.dark,f.r,0,f.bank)}}
+  addGate(indexAt12(2),colors.yellow);addStartStripe(indexAt12(2));addGate(indexAt12(126),colors.blue);addGate(indexAt12(209),colors.blue);addGate(indexAt12(333),colors.yellow);addGate(indexAt12(450),colors.blue);
+
+  const car={x:0,z:-510,y:.72,yaw:0,yawVel:0,vx:0,vz:0,vy:0,pitch:0,pitchVel:0,roll:0,rollVel:0,grip:1,drifting:false,driftTime:0,driftBlend:0,contacts:4,airTime:0,airborne:false};
+  const keys={},remote={connected:false,targetSteer:0,steer:0,throttle:0,brake:0,lastPacket:0};let cam=[0,6,-521],last=performance.now(),noteTimer=0,skidClock=0,skidTrails=[null,null];
+  const room=Math.random().toString(36).slice(2,6).toUpperCase(),pairEl=document.querySelector('#pair'),roomEl=document.querySelector('#room'),phoneStatus=document.querySelector('#phone-status'),controllerLink=document.querySelector('#controller-link');let controlSocket,reconnectTimer;
+  roomEl.textContent=room;
+  function setPhoneStatus(connected,text){remote.connected=connected;pairEl.classList.toggle('connected',connected);phoneStatus.textContent=text;if(!connected){remote.targetSteer=0;remote.throttle=0;remote.brake=0}}
+  let addressTimer;
+  async function controllerAddress(){let base=location.origin;try{const info=await fetch('/api/info').then(r=>r.json());if(info.controllerOrigin)base=info.controllerOrigin}catch{}const url=`${base}/controller.html?room=${encodeURIComponent(room)}`;controllerLink.href=url;controllerLink.textContent=url.replace(/^https?:\/\//,'');if(base.includes('.trycloudflare.com'))clearInterval(addressTimer)}
+  function connectControllerSocket(){clearTimeout(reconnectTimer);const proto=location.protocol==='https:'?'wss':'ws';controlSocket=new WebSocket(`${proto}://${location.host}/ws`);controlSocket.addEventListener('open',()=>{controlSocket.send(JSON.stringify({type:'host',room}));setPhoneStatus(false,'Waiting for phone')});controlSocket.addEventListener('message',event=>{let msg;try{msg=JSON.parse(event.data)}catch{return}if(msg.type==='controller'){setPhoneStatus(!!msg.connected,msg.connected?'Phone connected':'Waiting for phone')}else if(msg.type==='state'){remote.targetSteer=Math.max(-1,Math.min(1,Number(msg.steer)||0));remote.throttle=msg.throttle?1:0;remote.brake=msg.brake?1:0;remote.lastPacket=performance.now()}});controlSocket.addEventListener('close',()=>{setPhoneStatus(false,'Controller server reconnecting');reconnectTimer=setTimeout(connectControllerSocket,1000)});controlSocket.addEventListener('error',()=>controlSocket.close())}
+  controllerAddress();addressTimer=setInterval(controllerAddress,2000);connectControllerSocket();
+  addEventListener('keydown',e=>{keys[e.code]=true;if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();if(e.code==='KeyR')reset()});addEventListener('keyup',e=>keys[e.code]=false);addEventListener('blur',()=>{for(const k in keys)keys[k]=false});
+  function reset(){Object.assign(car,{x:0,z:-510,y:.72,yaw:0,yawVel:0,vx:0,vz:0,vy:0,pitch:0,pitchVel:0,roll:0,rollVel:0,grip:1,drifting:false,driftTime:0,driftBlend:0,contacts:4,airTime:0,airborne:false});skidTrails=[null,null];cam=[0,6,-521];noteTimer=1.1;document.querySelector('#note').classList.add('show')}
+  function rampHeight(){return null}
+  function surfaceHeightAt(x,z,yHint=car.y){const q=trackSurfaceAt(x,z,yHint);return q&&q.onTrack?q.y:-56}
+  function carPoint(lx,ly,lz){const r=car.yaw,t=-car.pitch,roll=car.roll,c=Math.cos(r),s=Math.sin(r),ct=Math.cos(t),st=Math.sin(t),cr=Math.cos(roll),sr=Math.sin(roll);return[car.x+(c*cr+s*st*sr)*lx+(-c*sr+s*st*cr)*ly+s*ct*lz,car.y+ct*sr*lx+ct*cr*ly-st*lz,car.z+(-s*cr+c*st*sr)*lx+(s*sr+c*st*cr)*ly+c*ct*lz]}
+  function collide(){const q=trackSurfaceAt(car.x,car.z,car.y);if(!q)return;const limit=q.width/2-1.02,over=Math.abs(q.lx)-limit;if(over>0&&over<4){const sign=Math.sign(q.lx),nx=Math.cos(q.r)*sign,nz=-Math.sin(q.r)*sign;car.x-=nx*over;car.z-=nz*over;const vn=car.vx*nx+car.vz*nz;if(vn>0){car.vx-=1.35*vn*nx;car.vz-=1.35*vn*nz;car.vx*=.82;car.vz*=.82;car.yawVel*=.8}}}
+  function update(dt){
+    const fresh=remote.connected&&performance.now()-remote.lastPacket<300,remoteTarget=fresh?remote.targetSteer:0;remote.steer+=(remoteTarget-remote.steer)*Math.min(1,12*dt);const keySteer=((keys.KeyA||keys.ArrowLeft)?1:0)-((keys.KeyD||keys.ArrowRight)?1:0),forward=(keys.KeyW||keys.ArrowUp)?1:fresh?remote.throttle:0,back=(keys.KeyS||keys.ArrowDown)?1:fresh?remote.brake:0,steer=keySteer||remote.steer;
+    const grounded=car.contacts>0;
+    let fx=Math.sin(car.yaw),fz=Math.cos(car.yaw),long=car.vx*fx+car.vz*fz,speed=Math.hypot(car.vx,car.vz);
+    if(grounded&&forward){car.vx+=fx*48*dt;car.vz+=fz*48*dt}
+    if(grounded&&back){if(long>1){const brakeForce=speed>14&&Math.abs(steer)>.12?18:42;car.vx-=fx*brakeForce*dt;car.vz-=fz*brakeForce*dt}else{car.vx-=fx*20*dt;car.vz-=fz*20*dt}}
+    speed=Math.hypot(car.vx,car.vz);
+    const speedRatio=Math.min(1,speed/68),dir=long>=0?1:-1,maxYawRate=1.22-.9*speedRatio,frontAuthority=1+.7*(1-car.grip)+.5*car.driftBlend,desiredYaw=grounded?steer*dir*maxYawRate*frontAuthority:car.yawVel,response=grounded?(7-4.2*speedRatio)*(.86+.14*car.grip):0;
+    car.yawVel+=(desiredYaw-car.yawVel)*Math.min(1,response*dt);car.yawVel*=Math.exp(-(grounded?(steer?.16:1.8):.12)*dt);car.yaw+=car.yawVel*dt;
+    fx=Math.sin(car.yaw);fz=Math.cos(car.yaw);const rx=Math.cos(car.yaw),rz=-Math.sin(car.yaw),side=car.vx*rx+car.vz*rz,slipAngle=Math.atan2(side,Math.abs(long)+4),wantsDrift=grounded&&speed>14&&(keys.Space||back&&Math.abs(steer)>.12);if(wantsDrift){car.drifting=true;car.driftTime=0}else if(car.drifting){car.driftTime+=dt;if(speed<10||car.driftTime>.85&&Math.abs(side)<2.4&&Math.abs(slipAngle)<.065)car.drifting=false}if(!grounded&&car.airTime>.12)car.drifting=false;const blendTarget=car.drifting?1:0,blendRate=blendTarget>car.driftBlend?1.65:.8;car.driftBlend+=(blendTarget-car.driftBlend)*Math.min(1,blendRate*dt);const rawSlip=Math.max(0,Math.min(1,(Math.abs(slipAngle)-(.12+.06*(1-speedRatio)))/.22)),rawInput=Math.max(0,Math.min(1,(Math.abs(steer)*speedRatio-.62)/.34)),slipBreak=rawSlip*rawSlip*(3-2*rawSlip),inputBreak=rawInput*rawInput*(3-2*rawInput),brakeSpeed=Math.max(0,Math.min(1,(speed-4)/8)),brakeBreak=grounded&&back?.66*(brakeSpeed*brakeSpeed*(3-2*brakeSpeed))*Math.min(1,Math.abs(steer)*1.35):0,sustainedBreak=car.driftBlend*(.56+.2*Math.min(1,Math.abs(steer)*1.5)),targetGrip=1-.74*Math.max(slipBreak,inputBreak,brakeBreak,sustainedBreak),gripChange=targetGrip<car.grip?2.15:.72;car.grip+=(targetGrip-car.grip)*Math.min(1,gripChange*dt);
+    // Model front and rear lateral tire forces separately. The rear can slide,
+    // while the steered front axle keeps bending the velocity vector into the
+    // corner instead of merely rotating the body across its old trajectory.
+    const baseGrip=6.2-2.8*speedRatio,frontGripRate=baseGrip*(.9+.12*(1-car.grip)+.1*car.driftBlend),driveSlip=forward*(1-car.grip)*.2*car.driftBlend,rearGripRate=(.75+(baseGrip-.75)*car.grip)*(1-driveSlip),frontWheelAngle=steer*dir*(.27-.12*speedRatio),frontYaw=car.yaw+frontWheelAngle,frontRx=Math.cos(frontYaw),frontRz=-Math.sin(frontYaw),frontSide=car.vx*frontRx+car.vz*frontRz,frontGrip=grounded?Math.min(1,dt*frontGripRate*.65):0,rearGrip=grounded?Math.min(1,dt*rearGripRate*.35):0;car.vx-=frontRx*frontSide*frontGrip+rx*side*rearGrip;car.vz-=frontRz*frontSide*frontGrip+rz*side*rearGrip;
+    if(grounded){const newLong=car.vx*fx+car.vz*fz,longAccel=(newLong-long)/Math.max(dt,.001);car.pitchVel+=longAccel*.018*dt;car.rollVel-=car.yawVel*speed*.02*dt}
+    speed=Math.hypot(car.vx,car.vz);
+    if(grounded&&!forward&&!back&&speed>.01){const next=Math.max(0,speed-6.2*dt);car.vx*=next/speed;car.vz*=next/speed}
+    const drag=Math.exp(-(grounded?.095:.3)*dt);car.vx*=drag;car.vz*=drag;speed=Math.hypot(car.vx,car.vz);if(speed>68){car.vx*=68/speed;car.vz*=68/speed;speed=68}
+    car.x+=car.vx*dt;car.z+=car.vz*dt;collide();
+    // Four suspension rays. Each contact applies spring/damper force to the
+    // chassis and torque around its pitch and roll axes.
+    let totalForce=0,pitchTorque=0,rollTorque=0,contacts=0,groundSum=0;
+    for(const lx of [-.82,.82])for(const lz of [-1.28,1.28]){const p=carPoint(lx,0,lz),ground=surfaceHeightAt(p[0],p[2],p[1]),dist=p[1]-ground,compression=1.05-dist;if(dist<1.15&&dist>-.45&&compression>0){const wheelV=car.vy+car.pitchVel*lz+car.rollVel*lx,force=Math.max(0,compression*120-wheelV*18);totalForce+=force;pitchTorque+=force*lz;rollTorque+=force*lx;groundSum+=ground;contacts++}}
+    car.vy+=(totalForce/4-32)*dt;car.y+=car.vy*dt;
+    car.pitchVel+=pitchTorque*.05*dt;car.rollVel+=rollTorque*.04*dt;
+    const angularDamp=Math.exp(-(contacts?3.2:.34)*dt);car.pitchVel*=angularDamp;car.rollVel*=angularDamp;car.pitch=Math.max(-.65,Math.min(.65,car.pitch+car.pitchVel*dt));car.roll=Math.max(-.42,Math.min(.42,car.roll+car.rollVel*dt));
+    car.contacts=contacts;car.airTime=contacts===0?car.airTime+dt:0;car.airborne=car.airTime>.055;
+    const surface=trackSurfaceAt(car.x,car.z,car.y),groundY=surfaceHeightAt(car.x,car.z,car.y);if(car.y<groundY+.24){car.y=groundY+.24;if(car.vy<0)car.vy*=-.16}
+    skidClock-=dt;const marking=contacts&&speed>12&&(car.drifting||car.grip<.68||Math.abs(side)>7);if(marking&&skidClock<=0){skidClock=.024;const c=Math.cos(car.yaw),s=Math.sin(car.yaw),markY=groundY+.065,wheels=[-.78,.78];for(let i=0;i<2;i++){const wheel=wheels[i],point={x:car.x+c*wheel-s*1.15,y:markY,z:car.z-s*wheel-c*1.15},previous=skidTrails[i];if(previous){const dx=point.x-previous.x,dz=point.z-previous.z,length=Math.hypot(dx,dz);if(length<4&&length>.015)skids.push({x:(point.x+previous.x)/2,y:(point.y+previous.y)/2,z:(point.z+previous.z)/2,sx:.2,sy:.028,sz:length+.12,r:Math.atan2(dx,dz),tilt:0,roll:surface.bank||0,color:[.002,.002,.002]})}skidTrails[i]=point}if(skids.length>700)skids.splice(0,skids.length-700)}else if(!marking)skidTrails=[null,null];
+    if(car.y<-80||Math.abs(car.x)>900||Math.abs(car.z)>900)reset();
+    const target=[car.x-fx*10,car.y+5.4,car.z-fz*10],smooth=1-Math.pow(.001,dt);cam[0]+=(target[0]-cam[0])*smooth;cam[1]+=(target[1]-cam[1])*smooth;cam[2]+=(target[2]-cam[2])*smooth;
+    document.querySelector('#speed').textContent=String(Math.round(Math.hypot(car.vx,car.vz)*4.6)).padStart(3,'0');if(noteTimer>0){noteTimer-=dt;if(noteTimer<=0)document.querySelector('#note').classList.remove('show')}
+  }
+  function cube(o){gl.uniformMatrix4fv(M,false,mat4.model(o.x,o.y,o.z,o.sx/2,o.sy/2,o.sz/2,o.r||0,o.tilt||0,o.roll||0));gl.uniform3fv(COL,o.color);gl.drawArrays(gl.TRIANGLES,0,36)}
+  function drawMesh(mesh,color){gl.disable(gl.CULL_FACE);gl.bindBuffer(gl.ARRAY_BUFFER,mesh.p);gl.vertexAttribPointer(P,3,gl.FLOAT,false,0,0);gl.bindBuffer(gl.ARRAY_BUFFER,mesh.n);gl.vertexAttribPointer(N,3,gl.FLOAT,false,0,0);gl.uniformMatrix4fv(M,false,mat4.model(0,0,0,1,1,1));gl.uniform3fv(COL,color);gl.drawArrays(gl.TRIANGLES,0,mesh.count);gl.enable(gl.CULL_FACE)}
+  function drawCar(){const rotation={r:car.yaw,tilt:-car.pitch,roll:car.roll},body=carPoint(0,.28,0),roof=carPoint(0,.84,-.15);cube({x:body[0],y:body[1],z:body[2],sx:2.15,sy:.65,sz:3.7,...rotation,color:colors.red});cube({x:roof[0],y:roof[1],z:roof[2],sx:1.65,sy:.7,sz:1.9,...rotation,color:[.85,.9,.95]});for(const sx of [-1,1])for(const sz of [-1,1]){const wheel=carPoint(sx*1.08,.12,sz*1.12);cube({x:wheel[0],y:wheel[1],z:wheel[2],sx:.42,sy:.55,sz:.8,...rotation,color:colors.dark})}cube({x:car.x,y:surfaceHeightAt(car.x,car.z)+.035,z:car.z,sx:2.25,sy:.018,sz:3.8,r:car.yaw,color:[.05,.07,.07]})}
+  function render(){const dpr=Math.min(devicePixelRatio,2),w=Math.floor(innerWidth*dpr),h=Math.floor(innerHeight*dpr);if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h)}gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);const look=[car.x,car.y+1,car.z],vp=mat4.mul(mat4.perspective(Math.PI/3,w/h,.1,2500),mat4.look(cam,look));gl.uniformMatrix4fv(VP,false,vp);drawMesh(trackMeshes.land,colors.grass);drawMesh(trackMeshes.cliffs,colors.slope);drawMesh(trackMeshes.road,colors.road);drawMesh(trackMeshes.walls,colors.white);bindCube();for(const o of scene)cube(o);for(const o of skids)cube(o);drawCar()}
+  function frame(now){let dt=Math.min(.05,(now-last)/1000);last=now;while(dt>0){const step=Math.min(1/120,dt);update(step);dt-=step}render();requestAnimationFrame(frame)}
+  // Tiny read-only-friendly hook for automated smoke tests; not used by gameplay.
+  window.__driveDebug={car,reset,route:pts,ramp,trackSurfaceAt,pathFrameAt,skids,gates,remote,room};
+  reset();canvas.focus();requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
