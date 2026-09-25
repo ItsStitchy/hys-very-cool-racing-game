@@ -158,6 +158,12 @@ def handle_message(peer, message):
                 "throttle": bool(data.get("throttle")),
                 "brake": bool(data.get("brake")),
             })
+    elif kind == "reset" and peer.role == "controller" and peer.room:
+        with rooms_lock:
+            record = rooms.get(peer.room)
+            host = record and record.get("host")
+        if host and host.alive:
+            host.send({"type": "reset"})
 
 
 class Handler(SimpleHTTPRequestHandler):

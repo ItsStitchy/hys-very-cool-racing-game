@@ -3,3 +3,10 @@
 .tunnel-url
 __pycache__/
 .openai/
+.DS_Store
+
+.cert/
+.openai/
+.tools/
+.tunnel-url
+.DS_Store
